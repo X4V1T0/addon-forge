@@ -1,0 +1,112 @@
+:root {
+  --forge-bg-dark: #1c130e;
+  --forge-primary: #c1440e;
+  --forge-primary-hover: #9f380b;
+  --forge-accent: #f2a541;
+  --forge-cream: #f5ead9;
+}
+
+html {
+  font-size: 15px;
+}
+
+body {
+  background-color: #f7f4f0;
+  color: #2b241f;
+}
+
+/* ---- Navbar: dark, matches the forge icon's palette ---- */
+.navbar-forge {
+  background-color: var(--forge-bg-dark);
+}
+
+.navbar-forge .navbar-brand,
+.navbar-forge .nav-link {
+  color: var(--forge-cream);
+}
+
+.navbar-forge .nav-link:hover,
+.navbar-forge .nav-link.active {
+  color: var(--forge-accent);
+}
+
+.navbar-forge .navbar-toggler {
+  border-color: rgba(245, 234, 217, 0.35);
+}
+
+.navbar-forge .navbar-toggler-icon {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba(245, 234, 217, 0.85)' stroke-width='2' stroke-linecap='round' stroke-miterlimit='10' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e");
+}
+
+/* ---- Brand accent color, used sparingly instead of Bootstrap's default blue ---- */
+.btn-primary {
+  --bs-btn-bg: var(--forge-primary);
+  --bs-btn-border-color: var(--forge-primary);
+  --bs-btn-hover-bg: var(--forge-primary-hover);
+  --bs-btn-hover-border-color: var(--forge-primary-hover);
+  --bs-btn-active-bg: var(--forge-primary-hover);
+  --bs-btn-active-border-color: var(--forge-primary-hover);
+  --bs-btn-disabled-bg: var(--forge-primary);
+  --bs-btn-disabled-border-color: var(--forge-primary);
+}
+
+a {
+  color: var(--forge-primary);
+}
+
+a:hover {
+  color: var(--forge-primary-hover);
+}
+
+.btn:focus,
+.btn:active:focus,
+.btn-link.nav-link:focus,
+.form-control:focus,
+.form-check-input:focus,
+.form-select:focus {
+  box-shadow: 0 0 0 0.2rem rgba(193, 68, 14, 0.25);
+  border-color: var(--forge-accent);
+}
+
+/* ---- Cards: a bit more presence than bare Bootstrap defaults ---- */
+.card {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.card-body h2.h6 {
+  color: #6b5d4f;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+/* ---- Addon list (Dashboard) ---- */
+.addon-card .addon-name {
+  font-weight: 600;
+  font-size: 1.05rem;
+}
+
+.addon-card .addon-meta {
+  font-size: 0.85rem;
+  color: #6b5d4f;
+}
+
+.addon-card .addon-meta code {
+  color: inherit;
+}
+
+/* ---- Code/preview blocks ---- */
+pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Comfortable tap targets on touch devices */
+@media (max-width: 575.98px) {
+  .btn {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+}

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - Addon Forge</title>
+    <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+</head>
+<body>
+    <header>
+        <nav class="navbar navbar-expand-md navbar-forge mb-3">
+            <div class="container">
+                @{
+                    // asp-page="/Index" resolves to just PathBase with no trailing
+                    // slash behind Home Assistant's ingress proxy, which the proxy then
+                    // 404s on (it expects the prefix boundary to end in "/"). Root is the
+                    // one page this can happen for, since its own path is empty - build
+                    // its links explicitly instead of relying on the tag helper here.
+                    var dashboardUrl = Context.Request.PathBase + "/";
+                }
+                <a class="navbar-brand" href="@dashboardUrl">🛠️ Addon Forge</a>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMain"
+                        aria-controls="navMain" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <div class="collapse navbar-collapse" id="navMain">
+                    <ul class="navbar-nav flex-grow-1 mt-2 mt-md-0">
+                        <li class="nav-item">
+                            <a class="nav-link" href="@dashboardUrl">Dashboard</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" asp-page="/AddAddon">Add addon</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" asp-page="/Settings">Settings</a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </nav>
+    </header>
+    <div class="container">
+        <main role="main" class="pb-5">
+            @RenderBody()
+        </main>
+    </div>
+
+    <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Every action in this app (Analyze, Confirm, Check now, Publish...)
+        // is a full-page form POST that can take a few seconds (git clone,
+        // LLM calls) with nothing on screen changing until the next page
+        // loads. Disable the clicked button and show a spinner immediately so
+        // it's clear the click registered, instead of looking frozen.
+        document.addEventListener('submit', function (event) {
+            if (event.defaultPrevented) {
+                // A confirm() dialog (Stop managing, Delete...) was cancelled.
+                return;
+            }
+
+            var form = event.target;
+            if (!(form instanceof HTMLFormElement)) {
+                return;
+            }
+
+            var submitter = event.submitter;
+            form.querySelectorAll('button[type="submit"]').forEach(function (button) {
+                button.disabled = true;
+                if (button === submitter) {
+                    var spinner = document.createElement('span');
+                    spinner.className = 'spinner-border spinner-border-sm me-2';
+                    spinner.setAttribute('role', 'status');
+                    spinner.setAttribute('aria-hidden', 'true');
+                    button.prepend(spinner);
+                }
+            });
+        });
+    </script>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

@@ -1,0 +1,372 @@
+@page "{slug}"
+@using AddonForge.Core.Models
+@model AddonForge.Web.Pages.AddonDetailModel
+@{
+    ViewData["Title"] = Model.Addon?.Name ?? "Addon";
+}
+
+@if (Model.Addon is not { } addon)
+{
+    <p>Not found.</p>
+    return;
+}
+
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+    <div class="text-break">
+        <h1 class="mb-0 h3">@addon.Name</h1>
+        <p class="text-muted mb-0"><code>@addon.Slug</code> · <a href="@addon.SourceRepoUrl" target="_blank" rel="noopener">@addon.SourceRepoUrl</a></p>
+    </div>
+    <a asp-page="/Index" class="btn btn-outline-secondary">Back</a>
+</div>
+
+@if (TempData["StatusMessage"] is string msg)
+{
+    <div class="alert alert-info">@msg</div>
+}
+
+@if (addon.LastError is not null)
+{
+    <div class="alert alert-danger">Last check failed: @addon.LastError</div>
+}
+
+@if (addon.DataAtRisk.Count > 0)
+{
+    <div class="alert alert-warning">
+        <strong>Data at risk.</strong> Home Assistant only keeps <code>/data</code> across an update — this app looks
+        like it keeps state elsewhere, and everything there is lost the next time the addon is rebuilt:
+        <ul class="mb-2">
+            @foreach (var c in addon.DataAtRisk)
+            {
+                <li><code>@c.Path</code> <span class="text-muted small">— @c.Reason</span></li>
+            }
+        </ul>
+        <form method="post" asp-page-handler="SetPersistentPaths" class="d-inline">
+            <input type="hidden" name="slug" value="@addon.Slug" />
+            <input type="hidden" name="persistentPaths" value="@string.Join('\n', addon.PersistentPaths)" />
+            <input type="hidden" name="addDetected" value="true" />
+            <button type="submit" class="btn btn-sm btn-warning">Persist these &amp; regenerate</button>
+        </form>
+        <form method="post" asp-page-handler="DismissDataRisk" class="d-inline ms-1">
+            <input type="hidden" name="slug" value="@addon.Slug" />
+            <button type="submit" class="btn btn-sm btn-outline-secondary">Not needed, dismiss</button>
+        </form>
+        <div class="small text-muted mt-2">
+            Not every path listed is app state: one that is a folder you provide yourself (a music/photo library set
+            through an option or a mapped folder) can be dismissed safely.
+        </div>
+    </div>
+}
+
+<div class="row mb-3">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h2 class="h6">Tracking</h2>
+                <p class="mb-1">Source: <strong>@(addon.SourceKind == SourceKind.DockerImage ? "Docker image" : "Git repo")</strong></p>
+                @if (addon.SourceKind == SourceKind.DockerImage)
+                {
+                    <p class="mb-1">Tracking the latest tag on <code>@addon.SourceRepoUrl</code>.</p>
+                }
+                else
+                {
+                    <p class="mb-1">Ref type: <strong>@addon.SourceRefType</strong>
+                        @if (addon.SourceRefType == SourceRefType.Branch)
+                        {
+                            <text> (<code>@addon.TrackedBranch</code>)</text>
+                        }
+                    </p>
+                }
+                <p class="mb-1">Current: <strong>@addon.CurrentVersion</strong> <code>@addon.CurrentRef</code></p>
+                <p class="mb-1">Last checked: @(addon.LastCheckedAt?.ToLocalTime().ToString("g") ?? "never")</p>
+                <p class="mb-0">Last written: @(addon.LastWrittenAt?.ToLocalTime().ToString("g") ?? "never")</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h2 class="h6">Update policy</h2>
+                <form method="post" asp-page-handler="SetPolicy" class="d-flex gap-2">
+                    <input type="hidden" name="slug" value="@addon.Slug" />
+                    <select name="policy" class="form-select">
+                        @foreach (var p in Enum.GetValues<UpdatePolicy>())
+                        {
+                            @if (p == addon.UpdatePolicy)
+                            {
+                                <option value="@p" selected>@p</option>
+                            }
+                            else
+                            {
+                                <option value="@p">@p</option>
+                            }
+                        }
+                    </select>
+                    <button type="submit" class="btn btn-outline-secondary">Save</button>
+                </form>
+                <p class="form-text mb-0">Auto writes updates straight to the store; Manual waits for you to publish below.</p>
+                <form method="post" asp-page-handler="CheckNow" class="mt-2">
+                    <input type="hidden" name="slug" value="@addon.Slug" />
+                    <button type="submit" class="btn btn-secondary">Check for updates now</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <h2 class="h6">Icon</h2>
+        <div class="d-flex align-items-start gap-3 flex-wrap">
+            <img src="@Url.Page(null, "Icon", new { slug = addon.Slug, v = addon.LastWrittenAt?.Ticks })"
+                 alt="" width="64" height="64" class="border rounded"
+                 onerror="this.style.display='none'" />
+            <div class="flex-grow-1">
+                <p class="text-muted small mb-2">
+                    PNG or JPEG. Only needed if analysis couldn't find one in the repo, or found the wrong
+                    thing. Saving uploads it and regenerates immediately, on this addon's current version.
+                </p>
+                <form method="post" asp-page-handler="SetIcon" enctype="multipart/form-data" class="d-flex gap-2 flex-wrap">
+                    <input type="hidden" name="slug" value="@addon.Slug" />
+                    <input type="file" name="icon" accept="image/png,image/jpeg" class="form-control" style="max-width: 20rem;" />
+                    <button type="submit" class="btn btn-outline-secondary">Upload</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <h2 class="h6">Config file</h2>
+        <p class="text-muted small mb-2">
+            For settings this app only reads from a config file, not environment variables (e.g. example-app's
+            weather config) — addon-forge can't discover this on its own. Paste the file's content, replacing
+            whatever should be configurable with <code>${OPTION_NAME}</code> placeholders. Any name not already
+            an option gets automatically created as one too, so it actually shows up on this addon's
+            Configuration tab. Written to the destination path before the app starts, with placeholders
+            substituted by their option's value — works for any text format, since it's never parsed, just text
+            substitution. Leave both fields empty to remove it. Saving regenerates and rewrites this addon
+            immediately.
+        </p>
+        <form method="post" asp-page-handler="SetConfigFile">
+            <input type="hidden" name="slug" value="@addon.Slug" />
+            <div class="mb-2">
+                <label class="form-label">Destination path inside the container</label>
+                <input type="text" name="configFileDestPath" class="form-control" placeholder="/config/config.yaml"
+                       value="@addon.ConfigFileDestPath" />
+            </div>
+            <div class="mb-2">
+                <label class="form-label">Template</label>
+                <textarea name="configFileTemplate" class="form-control font-monospace" rows="6"
+                          placeholder="weather:&#10;  location: ${WEATHER_LOCATION}&#10;  api_key: ${WEATHER_API_KEY}">@addon.ConfigFileTemplate</textarea>
+            </div>
+            <div class="form-check mb-2">
+                <input type="checkbox" name="allowDistrolessDebugShell" value="true" class="form-check-input"
+                       id="allowDistrolessDebugShell" checked="@addon.AllowDistrolessDebugShell" />
+                <label class="form-check-label" for="allowDistrolessDebugShell">Allow a distroless debug shell</label>
+                <div class="form-text">
+                    Only matters if this addon's final build stage is a "distroless" base image
+                    (<code>gcr.io/distroless/...</code>) — those ship with no shell, so options and the config
+                    file above can't be delivered there at all; ignored otherwise. Checking this switches that
+                    stage to distroless's own "debug" tag, which includes a minimal shell for exactly this
+                    purpose — removes some of the hardening that image intentionally shipped with, an explicit
+                    trade-off you're choosing. If the base image runs as a non-root user (a `nonroot` tag), that
+                    user usually can't read <code>/data/options.json</code> or create the config file above
+                    either — so the wrapper's setup step runs as root for that, then drops back to running the
+                    app itself as whatever user its own Dockerfile declared (via <code>USER</code>), same as
+                    before.
+                </div>
+            </div>
+            <button type="submit" class="btn btn-outline-secondary">Save &amp; regenerate</button>
+        </form>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <h2 class="h6">Persistent data</h2>
+        <p class="text-muted small mb-2">
+            Home Assistant only keeps <code>/data</code> across a rebuild or update — anything an app writes
+            elsewhere is wiped. For apps that hardcode a state directory and ignore any env var to move it, list
+            it here: each path becomes a symlink into <code>/data</code> when the addon starts (the first time,
+            the image's own copy of the directory is copied over; after that <code>/data</code> always wins, so an
+            update never overwrites real data). One absolute container path per line. Needs an image that starts as
+            root. Saving regenerates and rewrites this addon immediately, but the data is only kept from the next
+            time it's rebuilt in Home Assistant onward — anything already written to an unpersisted path before
+            then is still lost on that rebuild.
+        </p>
+        @if (addon.DetectedPersistentPaths.Count > 0)
+        {
+            <p class="small mb-2">Detected in the source repo:</p>
+            <ul class="small mb-2">
+                @foreach (var c in addon.DetectedPersistentPaths)
+                {
+                    <li>
+                        <code>@c.Path</code> — @c.Reason@(c.Recommended ? "" : " (weaker signal)")
+                        @if (addon.PersistentPaths.Contains(c.Path))
+                        {
+                            <span class="badge text-bg-success">persisted</span>
+                        }
+                    </li>
+                }
+            </ul>
+        }
+        <form method="post" asp-page-handler="SetPersistentPaths">
+            <input type="hidden" name="slug" value="@addon.Slug" />
+            <textarea name="persistentPaths" class="form-control font-monospace mb-2" rows="3"
+                      placeholder="/var/lib/myapp">@string.Join('\n', addon.PersistentPaths)</textarea>
+            <button type="submit" class="btn btn-outline-secondary">Save &amp; regenerate</button>
+        </form>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <h2 class="h6">Shared with other addons</h2>
+        <p class="text-muted small mb-2">
+            For handing this addon's own files to a <strong>different</strong> addon — not for surviving a
+            rebuild (this addon's own <code>/data</code> above already does that). Each path is symlinked into
+            <code>/share/@(addon.Slug)/...</code> instead, which any other addon can read by adding
+            <code>share:ro</code> to its own <code>map:</code> — for example, exposing this addon's own log
+            files to a bouncer/monitoring addon that can't otherwise see inside this one's private
+            <code>/data</code>. This addon's own <code>map:</code> gets <code>share:rw</code> added
+            automatically. One absolute container path per line. Needs an image that starts as root. A path
+            can't be both persistent and shared — pick one.
+        </p>
+        <form method="post" asp-page-handler="SetSharedPaths">
+            <input type="hidden" name="slug" value="@addon.Slug" />
+            <textarea name="sharedPaths" class="form-control font-monospace mb-2" rows="3"
+                      placeholder="/data/nginx/logs">@string.Join('\n', addon.SharedPaths)</textarea>
+            <button type="submit" class="btn btn-outline-secondary">Save &amp; regenerate</button>
+        </form>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <h2 class="h6">Networking</h2>
+        <p class="text-muted small mb-2">
+            For an image that declares no ports at all (common for one built around Docker's own
+            <code>network_mode: host</code>) — addon-forge has nothing to detect on its own. "Run on the host
+            network" maps to <code>host_network</code>; the ports below are still written to
+            <code>config.yaml</code> for reference, but become informational only once that's checked
+            (confirmed against the Supervisor's own source: it drops the actual port mapping entirely under
+            host networking). One port per line:
+            <code>container_port[/protocol][:host_port][:description]</code> — e.g.
+            <code>81/tcp:81:Admin UI</code>. A manual entry wins over a detected one for the same container
+            port/protocol.
+        </p>
+        <form method="post" asp-page-handler="SetNetworking">
+            <input type="hidden" name="slug" value="@addon.Slug" />
+            <div class="form-check mb-2">
+                <input type="checkbox" name="hostNetwork" value="true" class="form-check-input" id="hostNetworkCheck"
+                       checked="@(addon.HostNetwork ? "checked" : null)" />
+                <label class="form-check-label" for="hostNetworkCheck">Run on the host network</label>
+            </div>
+            <textarea name="manualPorts" class="form-control font-monospace mb-2" rows="3"
+                      placeholder="80/tcp:80:HTTP&#10;443/tcp:443:HTTPS&#10;81/tcp:81:Admin UI">@string.Join('\n', addon.ManualPorts)</textarea>
+            <button type="submit" class="btn btn-outline-secondary">Save &amp; regenerate</button>
+        </form>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <h2 class="h6">Extra environment variables</h2>
+        <p class="text-muted small mb-2">
+            For anything the repo only documents in its README or wiki, not in its Dockerfile, compose file
+            or .env.example — addon-forge has no way to read prose documentation on its own. One per line,
+            <code>KEY=value</code> (leave the value empty if there's no sensible default). Saving regenerates
+            and rewrites this addon immediately, on its current version — no need to wait for an upstream update.
+        </p>
+        <form method="post" asp-page-handler="SetManualEnvVars">
+            <input type="hidden" name="slug" value="@addon.Slug" />
+            <textarea name="manualEnvVars" class="form-control mb-2" rows="3"
+                      placeholder="ADMIN_PASSWORD=&#10;KIOSK_CACHE_TTL=300">@string.Join('\n', addon.ManualEnvVars)</textarea>
+            <button type="submit" class="btn btn-outline-secondary">Save &amp; regenerate</button>
+        </form>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(addon.StagedRef) && addon.StagedRef != addon.CurrentRef)
+{
+    <div class="card mb-3 border-warning">
+        <div class="card-body">
+            <h2 class="h6">Update pending: @addon.StagedVersion (<code>@addon.StagedRef</code>)</h2>
+            <p class="text-muted">Generated and staged, not yet written to the local addon store.</p>
+            <form method="post" asp-page-handler="Publish">
+                <input type="hidden" name="slug" value="@addon.Slug" />
+                <button type="submit" class="btn btn-primary">Write to local addon store</button>
+            </form>
+        </div>
+    </div>
+}
+
+<div class="row">
+    <div class="col-md-6">
+        <h2 class="h6">Published (<code>@addon.Slug</code> in the local addon store)</h2>
+        @if (Model.PublishedFileList.Count == 0)
+        {
+            <p class="text-muted">Nothing written yet.</p>
+        }
+        else
+        {
+            <p class="text-muted small">@Model.PublishedFileList.Count file(s) — the full build context Home Assistant will compile from.</p>
+            @foreach (var name in Model.PublishedFileList)
+            {
+                @if (Model.PublishedPreviews.TryGetValue(name, out var content))
+                {
+                    <details class="mb-2" open="@(name == "config.yaml")">
+                        <summary><code>@name</code></summary>
+                        <pre class="border rounded p-2 small bg-light">@content</pre>
+                    </details>
+                }
+                else
+                {
+                    <div class="small text-muted"><code>@name</code></div>
+                }
+            }
+        }
+    </div>
+    <div class="col-md-6">
+        <h2 class="h6">Staged</h2>
+        @if (Model.StagedFileList.Count == 0)
+        {
+            <p class="text-muted">Nothing staged.</p>
+        }
+        else
+        {
+            <p class="text-muted small">@Model.StagedFileList.Count file(s).</p>
+            @foreach (var name in Model.StagedFileList)
+            {
+                @if (Model.StagedPreviews.TryGetValue(name, out var content))
+                {
+                    <details class="mb-2" open="@(name == "config.yaml")">
+                        <summary><code>@name</code></summary>
+                        <pre class="border rounded p-2 small bg-light">@content</pre>
+                    </details>
+                }
+                else
+                {
+                    <div class="small text-muted"><code>@name</code></div>
+                }
+            }
+        }
+    </div>
+</div>
+
+<div class="card mt-3 border-danger">
+    <div class="card-body">
+        <h2 class="h6">Danger zone</h2>
+        <p class="text-muted small mb-2">
+            "Stop managing" only stops addon-forge tracking this addon — its files stay in the local
+            addon store. "Delete from store" actually removes <code>/addons/@addon.Slug</code> from
+            disk. If this addon is currently installed in Home Assistant, uninstall it there first.
+        </p>
+        <form method="post" asp-page-handler="Delete"
+              onsubmit="return confirm('Permanently delete /addons/@addon.Slug from disk? If it is currently installed in Home Assistant, uninstall it there first — removing its files while installed can leave it broken. This cannot be undone.');">
+            <input type="hidden" name="slug" value="@addon.Slug" />
+            <button type="submit" class="btn btn-danger">Delete from store</button>
+        </form>
+    </div>
+</div>

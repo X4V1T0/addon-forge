@@ -1,0 +1,53 @@
+@page
+@model AddonForge.Web.Pages.SettingsModel
+@{
+    ViewData["Title"] = "Settings";
+}
+
+<h1>Settings</h1>
+<p class="text-muted">
+    These come from this addon's own <code>options:</code> (set in Home Assistant under
+    <strong>Settings → Add-ons → Addon Forge → Configuration</strong>) and require a restart of this addon to take
+    effect after a change. This page is read-only on purpose — editing addon options here would go out of sync with
+    what Home Assistant shows on the Configuration tab.
+</p>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <h2 class="h6">LLM (schema &amp; docs assist)</h2>
+        <dl class="row mb-0">
+            <dt class="col-sm-3">Endpoint</dt>
+            <dd class="col-sm-9">@Model.Llm.Endpoint</dd>
+            <dt class="col-sm-3">Model</dt>
+            <dd class="col-sm-9">@Model.Llm.Model</dd>
+            <dt class="col-sm-3">API key</dt>
+            <dd class="col-sm-9">@(string.IsNullOrEmpty(Model.Llm.ApiKey) ? "(not set — LLM assist disabled, falls back to manual)" : "•••• (set)")</dd>
+        </dl>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <h2 class="h6">Scheduler</h2>
+        <dl class="row mb-0">
+            <dt class="col-sm-3">Check interval</dt>
+            <dd class="col-sm-9">every @Model.Scheduler.CheckIntervalHours hour(s)</dd>
+        </dl>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <h2 class="h6">Paths</h2>
+        <dl class="row mb-0">
+            <dt class="col-sm-3">Staging root</dt>
+            <dd class="col-sm-9"><code>@Model.Paths.StagingRoot</code></dd>
+            <dt class="col-sm-3">Published root</dt>
+            <dd class="col-sm-9"><code>@Model.Paths.PublishedRoot</code></dd>
+        </dl>
+        <p class="form-text mb-0">
+            The published root should be <code>/addons</code>, reached via this addon's <code>addons:rw</code> map —
+            that's the folder Home Assistant's Supervisor scans for local addons.
+        </p>
+    </div>
+</div>

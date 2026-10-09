@@ -1,0 +1,380 @@
+@page
+@model AddonForge.Web.Pages.AddAddonModel
+@{
+    ViewData["Title"] = "Add addon";
+}
+
+<h1>Add addon</h1>
+<p class="text-muted" id="gitSourceHint">Point at a repo with a Dockerfile (and optionally a docker-compose.yml).
+    Analyzing clones it shallowly and reads it — nothing is written anywhere until you confirm.</p>
+<p class="text-muted" id="imageSourceHint" style="display:none">
+    Point at an already-published image (e.g. <code>docker.io/library/redis</code> or
+    <code>ghcr.io/linuxserver/nginx</code>) — no Dockerfile needed. Analyzing inspects its manifest directly against
+    its registry; nothing is written anywhere until you confirm. If it needs no options, no config file and no
+    persistent/shared data, the Supervisor pulls it directly (no build at all); otherwise a minimal Dockerfile
+    wrapped around it is built instead, same as a git-sourced addon.
+</p>
+
+@if (Model.Error is not null)
+{
+    <div class="alert alert-danger">@Model.Error</div>
+}
+
+<form method="post" enctype="multipart/form-data">
+    <div class="card mb-3">
+        <div class="card-body">
+            <h2 class="h5">Source</h2>
+            <div class="mb-3">
+                <label asp-for="Input.SourceKind" class="form-label"></label>
+                <select asp-for="Input.SourceKind" class="form-select" id="sourceKindSelect"
+                        asp-items="Html.GetEnumSelectList<AddonForge.Core.Models.SourceKind>()"></select>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.RepoUrl" class="form-label"></label>
+                <input asp-for="Input.RepoUrl" class="form-control" id="repoUrlInput"
+                       placeholder="https://github.com/owner/repo" />
+            </div>
+            <div class="row">
+                <div class="col-md-4 mb-3" id="refTypeGroup">
+                    <label asp-for="Input.RefType" class="form-label"></label>
+                    <select asp-for="Input.RefType" class="form-select" id="refTypeSelect"
+                            asp-items="Html.GetEnumSelectList<AddonForge.Core.Models.SourceRefType>()"></select>
+                </div>
+                <div class="col-md-4 mb-3" id="tagRefGroup">
+                    <label asp-for="Input.Ref" class="form-label" id="tagRefLabel"></label>
+                    <input asp-for="Input.Ref" class="form-control" id="tagRefInput" placeholder="v1.2.3" />
+                </div>
+                <div class="col-md-4 mb-3" id="branchRefGroup">
+                    <label asp-for="Input.TrackedBranch" class="form-label"></label>
+                    <input asp-for="Input.TrackedBranch" class="form-control" placeholder="main" />
+                </div>
+            </div>
+            <button type="submit" asp-page-handler="Analyze" class="btn btn-secondary">Analyze</button>
+        </div>
+    </div>
+
+    @if (Model.Analysis is { } analysis)
+    {
+        <div class="card mb-3">
+            <div class="card-body">
+                <h2 class="h5">Detected</h2>
+                <p class="text-muted mb-2">
+                    Dockerfile: @(!string.IsNullOrWhiteSpace(Model.Input.DockerfilePath) ? $"using {Model.Input.DockerfilePath}" : analysis.HasDockerfile ? "found at repo root" : "not found at repo root") ·
+                    docker-compose: @(analysis.HasCompose ? "found" : "not found")
+                </p>
+
+                @if (!analysis.HasDockerfile || !string.IsNullOrWhiteSpace(Model.Input.DockerfilePath))
+                {
+                    @if (analysis.DockerfileCandidates.Count > 0)
+                    {
+                        <div class="alert alert-warning">
+                            No Dockerfile at the repo root — this is often a multi-service repo with one Dockerfile
+                            per component instead of a single buildable addon. Pick one below to use as this
+                            addon's Dockerfile (it becomes the addon's whole container — components you don't pick
+                            aren't included). Click Analyze again after choosing, so what's detected below (options,
+                            persistent data) comes from the one you picked.
+                        </div>
+                        <div class="mb-3">
+                            <label asp-for="Input.DockerfilePath" class="form-label"></label>
+                            <select asp-for="Input.DockerfilePath" class="form-select">
+                                <option value="">— choose one —</option>
+                                @foreach (var candidate in analysis.DockerfileCandidates)
+                                {
+                                    <option value="@candidate">@candidate</option>
+                                }
+                            </select>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="alert alert-danger">
+                            No Dockerfile found anywhere in this repo. It can't be built as a single-container addon.
+                        </div>
+                    }
+                }
+
+                @if (analysis.Ports.Count > 0)
+                {
+                    <p class="mb-1"><strong>Ports:</strong>
+                        @string.Join(", ", analysis.Ports.Select(p => $"{p.ContainerPort}/{p.Protocol.ToString().ToLowerInvariant()}"))
+                    </p>
+                }
+                else
+                {
+                    <p class="mb-1 text-muted">
+                        No ports detected — common for images built around <code>network_mode: host</code> (they
+                        don't declare any). Add them under "Manual ports" below, or this addon won't be reachable.
+                    </p>
+                }
+
+                @if (analysis.Volumes.Count > 0)
+                {
+                    <p class="mb-1"><strong>Volumes:</strong> @string.Join(", ", analysis.Volumes.Select(v => v.ContainerPath))</p>
+                }
+
+                @if (analysis.PersistentPathCandidates.Count > 0 && Model.Input.SourceKind == AddonForge.Core.Models.SourceKind.DockerImage)
+                {
+                    <div class="alert alert-info mt-2 mb-2">
+                        This image declares these as <code>VOLUME</code>s:
+                        <ul class="mb-1">
+                            @foreach (var c in analysis.PersistentPathCandidates)
+                            {
+                                <li><code>@c.Path</code></li>
+                            }
+                        </ul>
+                        A volume inherited from an image can't be removed by anything built on top of it, so these
+                        can't be turned into symlinks — they can't be persisted or shared through addon-forge.
+                        Anything written there is lost on an update. If the app has a setting or environment
+                        variable for where it keeps its data, point it at another directory (e.g. one under
+                        <code>/data</code>, which Home Assistant does keep) and persist or share that one instead.
+                    </div>
+                }
+                else if (analysis.PersistentPathCandidates.Count > 0)
+                {
+                    <div class="alert alert-warning mt-2 mb-2">
+                        <strong>Data outside <code>/data</code> is lost on every update.</strong> Home Assistant only
+                        keeps <code>/data</code> per addon — anything else an app writes is wiped when the addon is
+                        rebuilt. This app looks like it keeps state at:
+                        <ul class="mb-1">
+                            @foreach (var c in analysis.PersistentPathCandidates)
+                            {
+                                <li><code>@c.Path</code> <span class="text-muted small">— @c.Reason@(c.Recommended ? "" : " (weaker signal)")</span></li>
+                            }
+                        </ul>
+                        The likely ones are pre-filled under "Persistent data paths" below.
+                    </div>
+                }
+
+                @if (analysis.EnvVars.Count > 0)
+                {
+                    <div class="table-responsive">
+                        <table class="table table-sm mt-2">
+                            <thead>
+                                <tr><th>Option</th><th>Type</th><th>Default</th><th></th></tr>
+                            </thead>
+                            <tbody>
+                            @foreach (var v in analysis.EnvVars)
+                            {
+                                <tr>
+                                    <td><code>@v.Name</code></td>
+                                    <td>@v.InferredType</td>
+                                    <td>@(v.DefaultValue ?? "—")</td>
+                                    <td>@(v.IsAmbiguous ? "needs review" : "")</td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                else
+                {
+                    <p class="text-muted">No environment variables detected.</p>
+                }
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-body">
+                <h2 class="h5">Addon details</h2>
+                <div class="mb-3">
+                    <label asp-for="Input.Slug" class="form-label"></label>
+                    <input asp-for="Input.Slug" class="form-control" />
+                </div>
+                <div class="mb-3">
+                    <label asp-for="Input.Name" class="form-label"></label>
+                    <input asp-for="Input.Name" class="form-control" />
+                </div>
+                <div class="mb-3">
+                    <label asp-for="Input.Description" class="form-label"></label>
+                    <textarea asp-for="Input.Description" class="form-control" rows="2"></textarea>
+                </div>
+                <div class="mb-3">
+                    <label asp-for="Input.Version" class="form-label"></label>
+                    <input asp-for="Input.Version" class="form-control" />
+                </div>
+                <div class="mb-3">
+                    <label asp-for="Input.MapEntries" class="form-label"></label>
+                    <textarea asp-for="Input.MapEntries" class="form-control" rows="2" placeholder="media:rw"></textarea>
+                    <div class="form-text">
+                        One per line, Home Assistant's own <code>map:</code> syntax (e.g. <code>media:rw</code>,
+                        <code>share:rw</code>). addon-forge can't reliably guess which host folder a container
+                        path like <code>/music</code> is supposed to be — this is entirely manual, and is kept
+                        as-is on every future regeneration rather than getting dropped.
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label asp-for="Input.ManualEnvVars" class="form-label"></label>
+                    <textarea asp-for="Input.ManualEnvVars" class="form-control" rows="3" placeholder="ADMIN_PASSWORD=&#10;KIOSK_CACHE_TTL=300"></textarea>
+                    <div class="form-text">
+                        One per line, <code>KEY=value</code> (leave the value empty if there's no sensible
+                        default, e.g. <code>API_TOKEN=</code>). For env vars a repo only documents in its README
+                        or wiki instead of its Dockerfile/compose file/.env.example — addon-forge can't go read
+                        prose documentation on its own, so add anything missing from "Detected" above here. Added
+                        as an option/schema entry the same as a detected one, and kept on every future
+                        regeneration.
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label asp-for="Input.PersistentPaths" class="form-label"></label>
+                    <textarea asp-for="Input.PersistentPaths" class="form-control font-monospace" rows="3" placeholder="/var/lib/myapp"></textarea>
+                    <div class="form-text">
+                        One absolute container path per line. Each is turned into a symlink into <code>/data</code>
+                        when the addon starts, so the app keeps writing where it always did but the data survives
+                        rebuilds and updates (existing content in the image is copied over the first time; after
+                        that <code>/data</code> always wins). Needed for apps that hardcode a state directory and
+                        ignore any env var to move it. Requires an image that starts as root. Kept on every future
+                        regeneration.
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label asp-for="Input.SharedPaths" class="form-label"></label>
+                    <textarea asp-for="Input.SharedPaths" class="form-control font-monospace" rows="3" placeholder="/data/nginx/logs"></textarea>
+                    <div class="form-text">
+                        One absolute container path per line, for handing this addon's own files to a
+                        <strong>different</strong> addon — not for surviving a rebuild (this addon's own
+                        <code>/data</code> already does that). Each is symlinked into
+                        <code>/share/&lt;this addon's slug&gt;/...</code> instead, which any other addon can read
+                        by adding <code>share:ro</code> to its own <code>map:</code> (e.g. a bouncer/monitoring
+                        addon reading this one's log files, which it otherwise has no way to see inside this
+                        addon's private <code>/data</code>). This addon's own <code>map:</code> gets
+                        <code>share:rw</code> added automatically. Requires an image that starts as root. A path
+                        can't be both persistent and shared — pick one. Kept on every future regeneration.
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label asp-for="Input.IconUpload" class="form-label"></label>
+                    <input asp-for="Input.IconUpload" type="file" accept="image/png,image/jpeg" class="form-control" />
+                    <div class="form-text">
+                        Optional — PNG or JPEG. Only needed if analysis didn't find one in the repo (some repos
+                        only ship an SVG favicon, or keep their logo somewhere addon-forge doesn't look).
+                        Overrides whatever was auto-detected, and is kept on every future regeneration.
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label asp-for="Input.ConfigFileDestPath" class="form-label"></label>
+                    <input asp-for="Input.ConfigFileDestPath" class="form-control" placeholder="/config/config.yaml" />
+                </div>
+                <div class="mb-3">
+                    <label asp-for="Input.ConfigFileTemplate" class="form-label"></label>
+                    <textarea asp-for="Input.ConfigFileTemplate" class="form-control font-monospace" rows="6"
+                              placeholder="weather:&#10;  location: ${WEATHER_LOCATION}&#10;  api_key: ${WEATHER_API_KEY}"></textarea>
+                    <div class="form-text">
+                        For settings this app only reads from a config file, not environment variables (e.g.
+                        a dashboard app's weather config) — addon-forge can't discover this on its own. Paste the
+                        file's content here, replacing whatever should be configurable with
+                        <code>${OPTION_NAME}</code> placeholders. Any name not already detected or added above
+                        gets automatically created as its own option too, so it actually shows up on this
+                        addon's Configuration tab for you to set — no need to also list it separately. Written to
+                        the destination path above before the app starts, with placeholders substituted by their
+                        option's value — works for any text format (YAML, JSON, TOML, INI...), since it's never
+                        actually parsed, just text substitution. Leave both fields empty if this app doesn't need
+                        one. Kept on every future regeneration.
+                    </div>
+                </div>
+                <div class="form-check mb-3">
+                    <input asp-for="Input.AllowDistrolessDebugShell" class="form-check-input" />
+                    <label asp-for="Input.AllowDistrolessDebugShell" class="form-check-label"></label>
+                    <div class="form-text">
+                        Only matters if this repo's final build stage is a "distroless" base image
+                        (<code>gcr.io/distroless/...</code>) — those ship with no shell, so the two settings above
+                        (and any detected options) can't be delivered there at all; ignored otherwise. Checking
+                        this switches that stage to distroless's own "debug" tag, which includes a minimal shell
+                        for exactly this purpose. This removes some of the hardening (no shell, no package
+                        manager, smaller attack surface) that image intentionally shipped with — an explicit
+                        trade-off you're choosing, not something addon-forge does on its own. If the base image
+                        runs as a non-root user (a `nonroot` tag), that user usually can't read
+                        <code>/data/options.json</code> or create the config file above either — so the wrapper's
+                        setup step runs as root for that, then drops back to running the app itself as whatever
+                        user its own Dockerfile declared (via <code>USER</code>), same as before.
+                    </div>
+                </div>
+                <div class="form-check mb-2">
+                    <input asp-for="Input.Ingress" class="form-check-input" id="ingressCheck" />
+                    <label asp-for="Input.Ingress" class="form-check-label"></label>
+                </div>
+                <div class="mb-3" id="ingressPortGroup">
+                    <label asp-for="Input.IngressPort" class="form-label"></label>
+                    <input asp-for="Input.IngressPort" class="form-control" />
+                    <div class="form-text">
+                        Only enable this if the app itself is ingress-aware (it knows to prefix its
+                        own links/redirects/assets with the path Home Assistant gives it — ASP.NET
+                        Core, Flask, Express etc. don't do this automatically). Most self-hosted apps
+                        aren't, and will show broken pages or 404s under ingress even though they
+                        work fine on a direct port. If unsure, leave ingress off and use a direct
+                        port instead — it always works.
+                    </div>
+                </div>
+                <div class="form-check mb-2">
+                    <input asp-for="Input.HostNetwork" class="form-check-input" />
+                    <label asp-for="Input.HostNetwork" class="form-check-label"></label>
+                    <div class="form-text">
+                        For an image built around Docker's own <code>network_mode: host</code> (e.g. a reverse
+                        proxy that needs to see clients' real IPs, or bundles a log analyzer that reads
+                        the host's own traffic). The ports below still get written to <code>config.yaml</code>
+                        for reference, but become informational only once this is checked — confirmed directly
+                        against the Supervisor's own source, it drops the actual port mapping entirely under host
+                        networking, since there's nothing for Docker to publish. The app itself has to actually
+                        bind those ports on the host.
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label asp-for="Input.ManualPorts" class="form-label"></label>
+                    <textarea asp-for="Input.ManualPorts" class="form-control font-monospace" rows="3"
+                              placeholder="80/tcp:80:HTTP&#10;443/tcp:443:HTTPS&#10;443/udp:443:HTTP/3 (QUIC)&#10;81/tcp:81:Admin UI"></textarea>
+                    <div class="form-text">
+                        One per line: <code>container_port[/protocol][:host_port][:description]</code> — e.g.
+                        <code>81/tcp:81:Admin UI</code>, or just <code>8080</code> (defaults to tcp, host port
+                        same as container port). For ports the image doesn't declare and addon-forge can't detect
+                        on its own (common for images with no <code>EXPOSE</code> at all, especially ones built
+                        for host networking). Merged with whatever WAS detected above — a manual entry wins if it
+                        names the same container port/protocol. Kept on every future regeneration.
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label asp-for="Input.UpdatePolicy" class="form-label"></label>
+                    <select asp-for="Input.UpdatePolicy" class="form-select"
+                            asp-items="Html.GetEnumSelectList<AddonForge.Core.Models.UpdatePolicy>()"></select>
+                    <div class="form-text">
+                        Auto writes regenerated files straight to the local addon store when a new version is found.
+                        Manual holds them for you to approve on the addon's detail page. Either way, installing or
+                        updating the addon in Home Assistant is always something you do yourself.
+                    </div>
+                </div>
+                <button type="submit" asp-page-handler="Confirm" class="btn btn-primary">Confirm &amp; write to store</button>
+            </div>
+        </div>
+    }
+</form>
+
+@section Scripts {
+    <script>
+        function syncRefFields() {
+            const isImage = document.getElementById('sourceKindSelect').value === '1';
+            const isTag = isImage || document.getElementById('refTypeSelect').value === '0';
+            document.getElementById('tagRefGroup').style.display = isTag ? '' : 'none';
+            document.getElementById('branchRefGroup').style.display = isTag ? 'none' : '';
+            // A DockerImage source has no branch concept at all - hide the
+            // Git-only "Track by" selector entirely rather than just letting
+            // it sit there unused.
+            document.getElementById('refTypeGroup').style.display = isImage ? 'none' : '';
+        }
+        function syncSourceKindFields() {
+            const isImage = document.getElementById('sourceKindSelect').value === '1';
+            document.getElementById('gitSourceHint').style.display = isImage ? 'none' : '';
+            document.getElementById('imageSourceHint').style.display = isImage ? '' : 'none';
+            document.getElementById('repoUrlInput').placeholder =
+                isImage ? 'docker.io/library/redis' : 'https://github.com/owner/repo';
+            document.getElementById('tagRefInput').placeholder = isImage ? 'v1.6.3' : 'v1.2.3';
+            syncRefFields();
+        }
+        function syncIngressField() {
+            document.getElementById('ingressPortGroup').style.display =
+                document.getElementById('ingressCheck').checked ? '' : 'none';
+        }
+        document.getElementById('sourceKindSelect')?.addEventListener('change', syncSourceKindFields);
+        document.getElementById('refTypeSelect')?.addEventListener('change', syncRefFields);
+        document.getElementById('ingressCheck')?.addEventListener('change', syncIngressField);
+        syncSourceKindFields();
+        syncIngressField();
+    </script>
+}

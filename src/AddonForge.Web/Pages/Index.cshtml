@@ -1,0 +1,112 @@
+@page
+@using AddonForge.Core.Models
+@model AddonForge.Web.Pages.IndexModel
+@{
+    ViewData["Title"] = "Dashboard";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h1 class="mb-0 h3">Managed addons</h1>
+    <a asp-page="/AddAddon" class="btn btn-primary">+ Add addon</a>
+</div>
+
+@if (TempData["StatusMessage"] is string msg)
+{
+    <div class="alert alert-info">@msg</div>
+}
+
+@if (Model.Addons.Count == 0)
+{
+    <div class="card">
+        <div class="card-body text-center py-5">
+            <p class="text-muted mb-3">No addons yet.</p>
+            <a asp-page="/AddAddon" class="btn btn-primary">Add your first addon</a>
+        </div>
+    </div>
+}
+else
+{
+    // asp-page-handler on a form with no explicit asp-page targets the
+    // current page (Index = app root). Since root's own path is empty,
+    // that resolves to just PathBase + "?handler=...&slug=..." - the
+    // ingress prefix followed directly by "?", with no "/" boundary in
+    // between. Home Assistant's ingress proxy 404s on that (see
+    // _Layout.cshtml for the same issue on plain links). Building the
+    // action explicitly with a guaranteed trailing slash avoids it.
+    var rootUrl = HttpContext.Request.PathBase + "/";
+    @foreach (var addon in Model.Addons)
+    {
+        var checkNowUrl = $"{rootUrl}?handler=CheckNow&slug={Uri.EscapeDataString(addon.Slug)}";
+        var forgetUrl = $"{rootUrl}?handler=Forget&slug={Uri.EscapeDataString(addon.Slug)}";
+        var deleteUrl = $"{rootUrl}?handler=Delete&slug={Uri.EscapeDataString(addon.Slug)}";
+        <div class="card addon-card mb-3">
+            <div class="card-body pb-2">
+                <div class="d-flex justify-content-between align-items-start gap-2">
+                    <div class="flex-grow-1 text-break" style="min-width: 0;">
+                        <a class="addon-name" asp-page="/AddonDetail" asp-route-slug="@addon.Slug">@addon.Name</a>
+                        <div class="addon-meta mt-1">
+                            <code>@addon.Slug</code>
+                            @if (!string.IsNullOrEmpty(addon.CurrentVersion))
+                            {
+                                <text> · v@(addon.CurrentVersion) <code class="text-muted">@addon.CurrentRef</code></text>
+                            }
+                        </div>
+                        <div class="addon-meta">
+                            @addon.UpdatePolicy policy · checked @(addon.LastCheckedAt?.ToLocalTime().ToString("g") ?? "never")
+                        </div>
+                    </div>
+                    <div class="flex-shrink-0 text-end">
+                        @if (addon.DataAtRisk.Count > 0)
+                        {
+                            <div class="mb-1">
+                                <a asp-page="/AddonDetail" asp-route-slug="@addon.Slug" class="badge text-bg-warning text-decoration-none"
+                                   title="This app keeps data outside /data, which is lost on every update. Click to review.">Data at risk</a>
+                            </div>
+                        }
+                        @switch (addon.Status)
+                        {
+                            case AddonStatus.UpToDate:
+                                <span class="badge text-bg-success">Up to date</span>
+                                break;
+                            case AddonStatus.UpdatePending:
+                                <span class="badge text-bg-warning">Update pending</span>
+                                break;
+                            default:
+                                <span class="badge text-bg-danger" title="@addon.LastError">Error</span>
+                                break;
+                        }
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer bg-white d-flex align-items-center gap-2">
+                <form method="post" action="@checkNowUrl">
+                    @Html.AntiForgeryToken()
+                    <button type="submit" class="btn btn-sm btn-outline-secondary">Check now</button>
+                </form>
+                <div class="dropdown ms-auto">
+                    <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        More
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item" asp-page="/AddonDetail" asp-route-slug="@addon.Slug">View details</a></li>
+                        <li>
+                            <form method="post" action="@forgetUrl"
+                                  onsubmit="return confirm('Stop managing @addon.Slug? Its files are left untouched.');">
+                                @Html.AntiForgeryToken()
+                                <button type="submit" class="dropdown-item">Stop managing</button>
+                            </form>
+                        </li>
+                        <li><hr class="dropdown-divider" /></li>
+                        <li>
+                            <form method="post" action="@deleteUrl"
+                                  onsubmit="return confirm('Permanently delete /addons/@addon.Slug from disk? If it is currently installed in Home Assistant, uninstall it there first — removing its files while installed can leave it broken. This cannot be undone.');">
+                                @Html.AntiForgeryToken()
+                                <button type="submit" class="dropdown-item text-danger">Delete from store</button>
+                            </form>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    }
+}

@@ -1,0 +1,33 @@
+name: "Addon Forge"
+version: "0.1.47"
+slug: "addon_forge"
+description: "Generates and watches Home Assistant addons from third-party Docker repos"
+url: "https://github.com/X4V1T0/addon-forge"
+arch:
+  - amd64
+init: false
+startup: services
+boot: auto
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:hammer-wrench
+map:
+  - addons:rw
+options:
+  llm:
+    endpoint: "https://api.openai.com/v1"
+    api_key: ""
+    model: "gpt-4o-mini"
+  scheduler:
+    check_interval_hours: 6
+  github:
+    token: ""
+schema:
+  llm:
+    endpoint: url
+    api_key: password
+    model: str
+  scheduler:
+    check_interval_hours: int(1,168)
+  github:
+    token: password?

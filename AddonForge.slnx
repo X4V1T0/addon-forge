@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AddonForge.Core/AddonForge.Core.csproj" />
+    <Project Path="src/AddonForge.Infrastructure/AddonForge.Infrastructure.csproj" />
+    <Project Path="src/AddonForge.Web/AddonForge.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/AddonForge.Core.Tests/AddonForge.Core.Tests.csproj" />
+    <Project Path="tests/AddonForge.Infrastructure.Tests/AddonForge.Infrastructure.Tests.csproj" />
+  </Folder>
+</Solution>
