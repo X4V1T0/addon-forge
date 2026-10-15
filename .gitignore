@@ -26,3 +26,6 @@ Thumbs.db
 *.db-wal
 appsettings.*.local.json
 .claude/
+
+# Distributable bundles
+*.zip
